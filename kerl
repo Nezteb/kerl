@@ -675,6 +675,8 @@ do_git_build() {
     git_version=$2
     build_name=$3
 
+    fix_otp_builds
+
     if is_build_name_used "$build_name"; then
         error "there's already a build named '$build_name'."
         exit_build
@@ -794,6 +796,8 @@ maybe_patch() {
 do_normal_build() {
     # $1: release
     # $2: build name
+
+    fix_otp_builds
 
     if ! is_valid_release "$1"; then
         exit_build
@@ -1628,6 +1632,8 @@ unset _KERL_CLEANUP
 do_install() {
     build_name=$1
 
+    fix_otp_installations
+
     if ! is_valid_install_path "$2"; then
         exit_install
     fi
@@ -2110,32 +2116,44 @@ get_active_path() {
 
 fix_otp_installations() {
     if [ -f "$KERL_BASE_DIR"/otp_installations ]; then
-        missing_names=""
+        missing_paths=""
         while read -r l; do
             path=$(echo "$l" | cut -d' ' -f2)
             if [ ! -e "$path" ]; then
-                missing_names="$path $missing_names"
+                missing_paths="$path $missing_paths"
             fi
         done <"$KERL_BASE_DIR"/otp_installations
-        for missing_name in ${missing_names}; do
-            escaped="$(echo "$missing_name" | \sed "$SED_OPT" -e 's#/$##' -e 's#\/#\\\/#g')"
-            list_remove installations "$escaped"
+
+        if [ -n "$missing_paths" ]; then
+            echo "Removing missing installations: $missing_paths"
+        fi
+
+        for missing_path in ${missing_paths}; do
+            escaped="$(echo "$missing_path" | \sed "$SED_OPT" -e 's#/$##' -e 's#\/#\\\/#g')"
+            list_remove installations "${escaped}"
         done
     fi
 }
 
 fix_otp_builds() {
     if [ -f "$KERL_BASE_DIR"/otp_builds ]; then
-        missing_rels=""
+        missing_names=""
+        missing_keys=""
         while read -r l; do
             rel=$(echo "$l" | cut -d, -f1)
             name=$(echo "$l" | cut -d, -f2)
             if [ ! -e "${KERL_BUILD_DIR}/${name}" ]; then
-                missing_rels="${rel},${name} $missing_rels"
+                missing_names="${name} $missing_names"
+                missing_keys="${rel},${name} $missing_keys"
             fi
         done <"$KERL_BASE_DIR"/otp_builds
-        for missing_rel in ${missing_rels}; do
-            list_remove "${missing_rel}"
+
+        if [ -n "$missing_names" ]; then
+            echo "Removing missing builds: $missing_names"
+        fi
+
+        for missing_key in ${missing_keys}; do
+            list_remove builds "${missing_key}"
         done
     fi
 }
@@ -2253,9 +2271,6 @@ upgrade_kerl() {
     current_kerl_path="$(command -v kerl)"
     notice "kerl $version is now available at $current_kerl_path."
 }
-
-fix_otp_builds
-fix_otp_installations
 
 case "$1" in
 version)
@@ -2483,6 +2498,8 @@ delete)
             usage_exit "delete build [build_name]"
         fi
 
+        fix_otp_builds
+
         rel="$(get_release_from_name "$3")"
         if [ -d "${KERL_BUILD_DIR:?}/$3" ]; then
             if ! maybe_remove "${KERL_BUILD_DIR:?}/$3"; then
@@ -2503,6 +2520,8 @@ delete)
         if [ $# -ne 3 ]; then
             usage_exit "delete installation <build_name|directory>"
         fi
+
+        fix_otp_installations
 
         if ! is_valid_installation "$3"; then
             error "'$3' is not a kerl-managed Erlang/OTP installation."
